@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.idea/
+.vscode/
+.venv/
+venv/
+.workbuddy/
+.ipynb_checkpoints/
