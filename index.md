@@ -22,4 +22,4 @@
 
 ## 学习博客
 
-- [Softmax 回归学习笔记](https://github.com/yorkvip/deep_learning_study/blob/main/blog/softmax回归学习笔记.md)
+- [Softmax 回归学习笔记](/deep_learning_study/blog/softmax回归学习笔记)
