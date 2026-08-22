@@ -18,7 +18,6 @@
 | 10 | [常用损失函数](10%20常用损失函数.ipynb) | 交叉熵、L2 损失等 |
 | 11 | [图像分类数据集](11%20图像分类数据集.ipynb) | Fashion-MNIST 加载与可视化 |
 | 12 | [softmax回归的从0开始实现](12%20softmax回归的从0开始实现.ipynb) | 手动实现 Softmax 分类 |
-| 12 | [softmax回归学习笔记](12%20softmax回归学习笔记.md) | Softmax 回归理论笔记 |
 | 13 | [softmax的简洁实现](13%20softmax的简洁实现.ipynb) | 用 nn.Module 简化 Softmax |
 
 ## 其他文件
