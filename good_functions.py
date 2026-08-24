@@ -124,11 +124,9 @@ def train_ch3(net, train_iter, test_iter, loss, num_epochs, updater):
     返回:
         (train_loss, train_acc)
     """
-    animator = d2l.Animator(xlabel='epoch', xlim=[1, num_epochs], ylim=[0.3, 0.9],
-                            legend=['train loss', 'train acc', 'test acc'])
     for epoch in range(num_epochs):
         train_metrics = train_epoch_ch3(net, train_iter, loss, updater)
         test_acc = evaluate_accuracy(net, test_iter)
-        animator.add(epoch + 1, train_metrics + (test_acc,))
-    train_loss, train_acc = train_metrics
+        train_loss, train_acc = train_metrics
+        print(f'epoch {epoch + 1}, loss {train_loss:.4f}, train acc {train_acc:.4f}, test acc {test_acc:.4f}')
     return train_loss, train_acc
