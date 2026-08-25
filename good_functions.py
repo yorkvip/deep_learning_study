@@ -111,7 +111,7 @@ def train_epoch_ch3(net, train_iter, loss, updater):
 
 
 def train_ch3(net, train_iter, test_iter, loss, num_epochs, updater):
-    """训练模型多个 epoch（d2l 没有）
+    """训练模型多个 epoch，实时绘制训练曲线
 
     参数:
         net:          模型
@@ -124,9 +124,59 @@ def train_ch3(net, train_iter, test_iter, loss, num_epochs, updater):
     返回:
         (train_loss, train_acc)
     """
+    import matplotlib.pyplot as plt
+    from IPython import display
+    from IPython import get_ipython
+
+    ipython = get_ipython()
+    if ipython is not None:
+        ipython.run_line_magic('config', 'InlineBackend.figure_format = "png"')
+
+    fig, axes = plt.subplots(1, 3, figsize=(12, 3.5))
+    lines = []
+    labels = ['train loss', 'train acc', 'test acc']
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
+    data = [[], [], []]
+
+    for ax, lbl, c in zip(axes, labels, colors):
+        line, = ax.plot([], [], color=c, label=lbl)
+        lines.append(line)
+        ax.set_xlabel('epoch')
+        ax.set_ylabel(lbl)
+        ax.set_title(lbl)
+        ax.legend(loc='best')
+        ax.set_xlim(1, num_epochs)
+    fig.tight_layout()
+
     for epoch in range(num_epochs):
         train_metrics = train_epoch_ch3(net, train_iter, loss, updater)
         test_acc = evaluate_accuracy(net, test_iter)
         train_loss, train_acc = train_metrics
-        print(f'epoch {epoch + 1}, loss {train_loss:.4f}, train acc {train_acc:.4f}, test acc {test_acc:.4f}')
+
+        data[0].append(train_loss)
+        data[1].append(train_acc)
+        data[2].append(test_acc)
+
+        for i, (line, d) in enumerate(zip(lines, data)):
+            line.set_data(range(1, len(d) + 1), d)
+            yvals = d
+            if yvals:
+                ymin, ymax = min(yvals), max(yvals)
+                pad = (ymax - ymin) * 0.1 if ymax > ymin else 0.1
+                axes[i].set_ylim(ymin - pad, ymax + pad)
+
+        axes[0].set_title(f'train loss  (epoch {epoch+1}/{num_epochs})')
+        axes[1].set_title(f'train acc   (epoch {epoch+1}/{num_epochs})')
+        axes[2].set_title(f'test acc    (epoch {epoch+1}/{num_epochs})')
+
+        display.clear_output(wait=True)
+        display.display(fig)
+
+    display.clear_output(wait=True)
+    display.display(fig)
+
+    print(f'training done — '
+          f'loss {train_loss:.4f}, '
+          f'train acc {train_acc:.4f}, '
+          f'test acc {test_acc:.4f}')
     return train_loss, train_acc
