@@ -110,22 +110,9 @@ def train_epoch_ch3(net, train_iter, loss, updater):
     return metric[0] / metric[2], metric[1] / metric[2]
 
 
-def train_ch3(net, train_iter, test_iter, loss, num_epochs, updater):
-    """训练模型多个 epoch，实时绘制训练曲线
-
-    参数:
-        net:          模型
-        train_iter:   训练集迭代器
-        test_iter:    测试集迭代器
-        loss:         损失函数
-        num_epochs (int): 训练轮数
-        updater:       参数更新器
-
-    返回:
-        (train_loss, train_acc)
-    """
+def _init_plot(num_epochs):
+    """创建三合一实时绘图，返回 (fig, axes, lines)"""
     import matplotlib.pyplot as plt
-    from IPython import display
     from IPython import get_ipython
 
     ipython = get_ipython()
@@ -133,50 +120,106 @@ def train_ch3(net, train_iter, test_iter, loss, num_epochs, updater):
         ipython.run_line_magic('config', 'InlineBackend.figure_format = "png"')
 
     fig, axes = plt.subplots(1, 3, figsize=(12, 3.5))
-    lines = []
     labels = ['train loss', 'train acc', 'test acc']
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
-    data = [[], [], []]
-
-    for ax, lbl, c in zip(axes, labels, colors):
-        line, = ax.plot([], [], color=c, label=lbl)
+    lines = []
+    for ax, lbl in zip(axes, labels):
+        line, = ax.plot([], [], label=lbl)
         lines.append(line)
         ax.set_xlabel('epoch')
         ax.set_ylabel(lbl)
-        ax.set_title(lbl)
         ax.legend(loc='best')
         ax.set_xlim(1, num_epochs)
     fig.tight_layout()
+    return fig, axes, lines
+
+
+def _update_plot(fig, axes, lines, data, epoch, num_epochs):
+    """更新绘图数据并刷新"""
+    from IPython import display
+    for i, (line, d) in enumerate(zip(lines, data)):
+        line.set_data(range(1, len(d) + 1), d)
+        if d:
+            ymin, ymax = min(d), max(d)
+            pad = (ymax - ymin) * 0.1 or 0.1
+            axes[i].set_ylim(ymin - pad, ymax + pad)
+        axes[i].set_title(f'{line.get_label()}  (epoch {epoch+1}/{num_epochs})')
+    display.clear_output(wait=True)
+    display.display(fig)
+
+
+def train_ch3(net, train_iter, test_iter, loss, num_epochs, updater):
+    """CPU 训练，调用方式不变"""
+    if isinstance(net, torch.nn.Module):
+        net.train()
+    fig, axes, lines = _init_plot(num_epochs)
+    data = [[], [], []]
 
     for epoch in range(num_epochs):
-        train_metrics = train_epoch_ch3(net, train_iter, loss, updater)
+        train_loss, train_acc = train_epoch_ch3(net, train_iter, loss, updater)
         test_acc = evaluate_accuracy(net, test_iter)
-        train_loss, train_acc = train_metrics
+        data[0].append(train_loss)
+        data[1].append(train_acc)
+        data[2].append(test_acc)
+        _update_plot(fig, axes, lines, data, epoch, num_epochs)
+
+    display.clear_output(wait=True)
+    display.display(fig)
+    print(f'done — loss {train_loss:.4f}, train acc {train_acc:.4f}, test acc {test_acc:.4f}')
+    return train_loss, train_acc
+
+
+def train_ch3_gpu(net, train_iter, test_iter, loss, num_epochs, updater):
+    """GPU 训练：自动把数据一次性预加载到 GPU，避免每个 batch 重复传输"""
+    from IPython import display
+    device = torch.device('cuda')
+    net = net.to(device)
+
+    # 预加载全部数据到 GPU
+    X_train, y_train = [], []
+    for X, y in train_iter:
+        X_train.append(X.to(device))
+        y_train.append(y.to(device))
+    X_train, y_train = torch.cat(X_train), torch.cat(y_train)
+
+    X_test, y_test = [], []
+    for X, y in test_iter:
+        X_test.append(X.to(device))
+        y_test.append(y.to(device))
+    X_test, y_test = torch.cat(X_test), torch.cat(y_test)
+    batch_size = next(iter(train_iter))[0].shape[0]
+
+    if isinstance(net, torch.nn.Module):
+        net.train()
+    fig, axes, lines = _init_plot(num_epochs)
+    data = [[], [], []]
+    n = len(X_train)
+
+    for epoch in range(num_epochs):
+        perm = torch.randperm(n, device=device)
+        total_loss, correct, count = 0.0, 0, 0
+        for i in range(0, n, batch_size):
+            idx = perm[i:i + batch_size]
+            y_hat = net(X_train[idx])
+            l = loss(y_hat, y_train[idx])
+            updater.zero_grad()
+            l.backward()
+            updater.step()
+            total_loss += l.item() * y_train[idx].numel()
+            correct += (y_hat.argmax(1) == y_train[idx]).sum().item()
+            count += y_train[idx].numel()
+
+        train_loss, train_acc = total_loss / count, correct / count
+        net.eval()
+        with torch.no_grad():
+            test_acc = (net(X_test).argmax(1) == y_test).float().mean().item()
+        net.train()
 
         data[0].append(train_loss)
         data[1].append(train_acc)
         data[2].append(test_acc)
-
-        for i, (line, d) in enumerate(zip(lines, data)):
-            line.set_data(range(1, len(d) + 1), d)
-            yvals = d
-            if yvals:
-                ymin, ymax = min(yvals), max(yvals)
-                pad = (ymax - ymin) * 0.1 if ymax > ymin else 0.1
-                axes[i].set_ylim(ymin - pad, ymax + pad)
-
-        axes[0].set_title(f'train loss  (epoch {epoch+1}/{num_epochs})')
-        axes[1].set_title(f'train acc   (epoch {epoch+1}/{num_epochs})')
-        axes[2].set_title(f'test acc    (epoch {epoch+1}/{num_epochs})')
-
-        display.clear_output(wait=True)
-        display.display(fig)
+        _update_plot(fig, axes, lines, data, epoch, num_epochs)
 
     display.clear_output(wait=True)
     display.display(fig)
-
-    print(f'training done — '
-          f'loss {train_loss:.4f}, '
-          f'train acc {train_acc:.4f}, '
-          f'test acc {test_acc:.4f}')
+    print(f'done — loss {train_loss:.4f}, train acc {train_acc:.4f}, test acc {test_acc:.4f}')
     return train_loss, train_acc
