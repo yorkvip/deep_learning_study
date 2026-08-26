@@ -6,3 +6,4 @@ __pycache__/
 venv/
 .workbuddy/
 .ipynb_checkpoints/
+data/
