@@ -160,8 +160,13 @@ def train_ch3(net, train_iter, test_iter, loss, num_epochs, updater):
         data[0].append(train_loss)
         data[1].append(train_acc)
         data[2].append(test_acc)
-        _update_plot(fig, axes, lines, data, epoch, num_epochs)
 
+    # 一次性绘制最终三张图（避免每 epoch 实时刷新在 Jupyter 里卡住）
+    for i, (line, d) in enumerate(zip(lines, data)):
+        line.set_data(range(1, len(d) + 1), d)
+        if d:
+            ymin, ymax = min(d), max(d)
+            axes[i].set_ylim(ymin - (ymax - ymin) * 0.1, ymax + (ymax - ymin) * 0.1)
     display.clear_output(wait=True)
     display.display(fig)
     print(f'done — loss {train_loss:.4f}, train acc {train_acc:.4f}, test acc {test_acc:.4f}')
@@ -173,6 +178,11 @@ def train_ch3_gpu(net, train_iter, test_iter, loss, num_epochs, updater):
     from IPython import display
     device = torch.device('cuda')
     net = net.to(device)
+    # 若优化器是在模型搬到 GPU 前创建的，其绑定的参数仍是 CPU 版，
+    # 直接用它会报 device 不一致 → 按模型现存超参重建优化器
+    if isinstance(updater, torch.optim.Optimizer):
+        hyper = {k: v for k, v in updater.param_groups[0].items() if k != 'params'}
+        updater = type(updater)(net.parameters(), **hyper)
 
     # 预加载全部数据到 GPU
     X_train, y_train = [], []
@@ -217,9 +227,59 @@ def train_ch3_gpu(net, train_iter, test_iter, loss, num_epochs, updater):
         data[0].append(train_loss)
         data[1].append(train_acc)
         data[2].append(test_acc)
-        _update_plot(fig, axes, lines, data, epoch, num_epochs)
 
+    # 一次性绘制最终三张图（避免每 epoch 实时刷新在 Jupyter 里卡住）
+    for i, (line, d) in enumerate(zip(lines, data)):
+        line.set_data(range(1, len(d) + 1), d)
+        if d:
+            ymin, ymax = min(d), max(d)
+            axes[i].set_ylim(ymin - (ymax - ymin) * 0.1, ymax + (ymax - ymin) * 0.1)
     display.clear_output(wait=True)
     display.display(fig)
     print(f'done — loss {train_loss:.4f}, train acc {train_acc:.4f}, test acc {test_acc:.4f}')
     return train_loss, train_acc
+
+
+
+class DropoutMLP(torch.nn.Module):
+    """普适的带丢弃法的多层感知机（替代文件19里写死的 Net 类）。
+
+    相比写死的版本，它：
+      - 支持任意数量的隐藏层（hidden_dims 传列表）
+      - 每个隐藏层可单独设定丢弃率
+      - 用 nn.Dropout，自带 .train()/.eval() 切换，不用手动判断 training
+
+    参数:
+        num_inputs (int):          输入维度（如图片展平后的 784）
+        num_outputs (int):         输出维度（如 10 分类）
+        hidden_dims (int | list):  各隐藏层单元数；传 int 则单隐藏层，传列表则多层
+        dropout_rate (float|list): 各隐藏层丢弃率；传列表时长须等于隐藏层数，传 float 则所有隐藏层相同
+
+    示例:
+        net = DropoutMLP(784, 10, hidden_dims=[256, 256], dropout_rate=[0.2, 0.5])
+        train_ch3(net, train_iter, test_iter, loss, num_epochs, updater)
+    """
+    def __init__(self, num_inputs, num_outputs, hidden_dims, dropout_rate=0.5):
+        super().__init__()
+        if isinstance(hidden_dims, int):
+            hidden_dims = [hidden_dims]
+        if isinstance(dropout_rate, (int, float)):
+            dropout_rate = [float(dropout_rate)] * len(hidden_dims)
+        assert len(dropout_rate) == len(hidden_dims), \
+            'dropout_rate 须与隐藏层数一致（或传单个 float 表示所有层相同）'
+
+        # 组装成 [线性→ReLU→Dropout] × 隐藏层数 + 最后输出线性层
+        self.layers = torch.nn.ModuleList()
+        dims = [num_inputs] + list(hidden_dims)
+        for i in range(len(hidden_dims)):
+            self.layers.append(torch.nn.Linear(dims[i], dims[i + 1]))
+            self.layers.append(torch.nn.ReLU())
+            self.layers.append(torch.nn.Dropout(dropout_rate[i]))
+        self.layers.append(torch.nn.Linear(hidden_dims[-1], num_outputs))
+
+    def forward(self, X):
+        # 自动展平任意维输入（批量,通道,高,宽）→（批量,特征），MLP 只需向量
+        X = X.reshape(X.shape[0], -1)
+        for layer in self.layers:
+            X = layer(X)
+        return X
